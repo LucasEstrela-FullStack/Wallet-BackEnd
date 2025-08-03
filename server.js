@@ -1,13 +1,16 @@
 import express from "express";
 import dotenv from "dotenv";
 import { sql } from "./config/db.js";
+import rateLimiter from "./middleware/rateLimiter.js";
 
 dotenv.config()
 
 const app = express()
 
 // Middleware
+app.use(rateLimiter)
 app.use(express.json());
+
 // app.use((req,res,next) => {
 //   console.log("Opa encontramos uma requisição, o metódo é", req.method)
 //   next()
@@ -96,7 +99,35 @@ app.delete("/api/transactions/:id", async(req,res) => {
     console.log("Erro ao deletar a transação", error)
     res.status(500).json({message:"Internal Server error"})
   }
-})
+});
+
+app.get("/api/transactions/summary/:userId", async(req,res) => {
+  try {
+    const { userId } = req.params;
+
+    const balanceResult = await sql`
+      SELECT COALESCE(SUM(amount), 0) AS balance FROM transactions WHERE user_id = ${userId}
+    `
+
+    const incomeResult = await sql`
+      SELECT COALESCE(SUM(amount), 0) AS income FROM transactions
+      WHERE user_id = ${userId} AND amount > 0
+    `
+
+    const expensesResult = await sql`
+      SELECT COALESCE(SUM(amount), 0) AS expenses FROM transactions
+      WHERE user_id = ${userId} AND amount < 0
+    `
+    res.status(200).json({
+      balance: balanceResult[0].balance,
+      income: incomeResult[0].income,
+      expenses: expensesResult[0].expenses,
+    });
+  } catch (error) {
+    console.log("Erro ao buscar o Summary:", error);
+    res.status(500).json({message: "Internal Server Error"});
+  }
+});
 
 initDB().then(() => {
   app.listen(PORT,() =>{
